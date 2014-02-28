@@ -38,7 +38,7 @@ class KLshell:
     if form == 'classic': self.theta = theta
 
     # Precomputations
-    self.params.setdefault( 'ischeme', 'gauss8' )
+    self.params.setdefault( 'ischeme', 'gauss14' )
     self.c0 = .5 * params['E'] * params['h'] / (1-params['nu']**2)
     self.c1 = self.c0*params['h']**2 / 12.
 
@@ -79,7 +79,7 @@ class KLshell:
     'Integrate over parametric domain.'
     kwargs.setdefault( 'ischeme', self.params['ischeme'] )
     kwargs['iweights'] = self.det * function.IWeights() if self.form=='local' else None
-    kwargs['coords'] = None if self.form=='local' else self.X
+    kwargs['geometry'] = None if self.form=='local' else self.X
     return self.domain.integrate( func, **kwargs )
 
   def energy_local( self, x ):
@@ -344,18 +344,18 @@ class KLshell:
       t0 = time.time()
       x -= relax*self.disp.dot( constrain | upd )
 
-def scordelislo( domain, coords, case='lo' ):
+def scordelislo( domain, geometry, case='lo' ):
   '''Scordelis-Lo roof benchmark,
-  I: domain,  StructuredTopology instance,
-     coords,  parametric coordinate function,
-     case,    formulation in ('lo', 'tr', 'pf'),
-  O: x,       displaced position,
-     d,       midpoint displacement,
-     W,       total internal energy.'''
+  I: domain,   StructuredTopology instance,
+     geometry, parametric coordinate function,
+     case,     formulation in ('lo', 'tr', 'pf'),
+  O: x,        displaced position,
+     d,        midpoint displacement,
+     W,        total internal energy.'''
   log.context( 'scordelis-lo' )
 
   # Geometry
-  xi, eta = coords
+  xi, eta = geometry
   length, radius, angle = 50, 25, 40
   phi = angle * xi * numpy.pi / 90.
   x0 = function.stack( [radius * function.sin(phi), length * eta, radius * (function.cos(phi)-1)] )
@@ -366,13 +366,13 @@ def scordelislo( domain, coords, case='lo' ):
   assert not numpy.mod( nelems, 2 ), 'need even nelems, got %i'%nelems
   disp = domain.splinefunc( degree=2 ).vector(3)
   midpoint = domain[nelems/2:,nelems/2:].boundary['bottom'].boundary['right']
-  midpointdisp = lambda func: midpoint.integrate( func, coords=coords, ischeme='none', title='midpointdisp' )
-  ischeme = 'gauss%i'%7 # {'pf':4, 'tr':3, 'lo':2}[case] # TODO: choose optimal orders
+  midpointdisp = lambda func: midpoint.integrate( func, geometry=geometry, ischeme='none', title='midpointdisp' )
+  ischeme = 'gauss%i'%12 # {'pf':4, 'tr':3, 'lo':2}[case] # TODO: choose optimal orders
 
   # Physics
   clamps = domain.boundary['top'] + domain.boundary['bottom'] 
-  cons = clamps.project( 0., onto=disp[:,0], coords=coords, ischeme=ischeme, title='proj[bcs x]' ) \
-       | clamps.project( 0., onto=disp[:,2], coords=coords, ischeme=ischeme, title='proj[bcs z]' )
+  cons = clamps.project( 0., onto=disp[:,0], geometry=geometry, ischeme=ischeme, title='proj[bcs x]' ) \
+       | clamps.project( 0., onto=disp[:,2], geometry=geometry, ischeme=ischeme, title='proj[bcs z]' )
   params = {'E':4.32e8, 'nu':0., 'h':.25, 'ischeme':ischeme} # dimensionless: {'E':1., 'nu':0., 'h':.25, 'ischeme':ischeme}
   phys = {'load':[0.,0.,-90.]} #                                              {'load':[0.,0.,-5.e-6/3.]}
   roof = KLshell( domain, disp, x0, params,
@@ -390,7 +390,7 @@ def scordelislo( domain, coords, case='lo' ):
 def conv( case='lo', levels=3, test=scordelislo ):
   'Convergence test for KL shell with b-splines.'
   # Coarse grid, reference geometry
-  domain0, coords = mesh.rectilinear( 2*(numpy.linspace(-.5,.5,3),) )
+  domain0, geometry = mesh.rectilinear( 2*(numpy.linspace(-.5,.5,3),) )
 
   # Compute errors
   errh2, d, W = [], [], []
@@ -398,14 +398,14 @@ def conv( case='lo', levels=3, test=scordelislo ):
   for n in nrange:
     if n == levels: # Reference configuration
       domain = domain0.refine(n)
-      xref, dref, Wref = test( domain, coords, case=case )
+      xref, dref, Wref = test( domain, geometry, case=case )
       h2norm = lambda x: numpy.sqrt( domain.integrate(
                (x**2).sum(0) +
-               (x.grad(coords)**2).sum([0,1]) +
-               (x.grad(coords).grad(coords)**2).sum([0,1,2]),
-               coords=coords, ischeme='gauss7', title='h2norm' ) )
+               (x.grad(geometry)**2).sum([0,1]) +
+               (x.grad(geometry).grad(geometry)**2).sum([0,1,2]),
+               geometry=geometry, ischeme='gauss12', title='h2norm' ) )
     else:
-      xi, di, Wi = test( domain0.refine(n), coords, case=case )
+      xi, di, Wi = test( domain0.refine(n), geometry, case=case )
       errh2.append( h2norm( xi-xref ) )
       d.append( di )
       W.append( Wi )
@@ -433,8 +433,8 @@ def conv( case='lo', levels=3, test=scordelislo ):
 
 def verify( case='lo' ):
   'Quick code verification.'
-  domain, coords = mesh.rectilinear( 2*(numpy.linspace(-.5,.5,9),) )
-  dref = scordelislo( domain, coords, case=case )[1]
+  domain, geometry = mesh.rectilinear( 2*(numpy.linspace(-.5,.5,9),) )
+  dref = scordelislo( domain, geometry, case=case )[1]
   numpy.testing.assert_almost_equal( dref, -0.242468, decimal=4,
         err_msg='Midpoint displacement (=%.4f) incorrect.'%dref )
 
