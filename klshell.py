@@ -48,14 +48,12 @@ class KLshell:
       'classic':(self.energy_classic, self.stiffness_classic),
       'parfree':(self.energy_parfree, self.stiffness_parfree)}[self.form]
 
-  @property
-  @core.cache
+  @cache.property
   def det( self ):
     J = function.localgradient( self.X, 2 )
     return function.norm2( function.cross( J[:,0], J[:,1], 0 ) )
 
-  @property
-  @core.cache
+  @cache.property
   def constit( self ):
     'Constitutive tensor.'
     nu = self.params['nu']
